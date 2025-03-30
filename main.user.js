@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         BadGuessr Map Util
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/hunterbdm/BadGuessr
 // @version      1.0.0
 // @description  Collect your worst guesses from the activities page and export them for map creation.
 // @author       hunterbdm
