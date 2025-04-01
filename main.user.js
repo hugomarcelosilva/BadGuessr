@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BadGuessr Map Util
 // @namespace    https://github.com/hunterbdm/BadGuessr
-// @version      1.0.0
+// @version      1.0.1
 // @description  Collect your worst guesses from the activities page and export them for map creation.
 // @author       hunterbdm
 // @match        https://www.geoguessr.com/*
@@ -16,7 +16,11 @@
 let config = {
     badGuessDistanceKMs: 1000,
     badGuessPoints: 2500,
+    afterTime: new Date(),
+    beforeTime: new Date()
 }
+config.afterTime.setFullYear(config.afterTime.getFullYear() - 1)
+config.beforeTime.setDate(config.beforeTime.getDate() + 1)
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let currentTab = ""
@@ -138,6 +142,19 @@ function drawUI() {
     `
     baseDiv.appendChild(configContainer)
 
+    let dateContainer = document.createElement("div")
+    dateContainer.style = "display: grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom: 10px;"
+    dateContainer.innerHTML = `
+    <div> 
+        <label class="label_label__9xkbh shared_white60Variant__EC173 shared_boldWeight__U2puG label_italic__LM62Y label_uppercase__DTBcv" style="--fs: var(--font-size-16); --lh: var(--line-height-16);">After date</label>
+        <input id="BadGuessr-afterDate" type="date" name="content-creator-code" class="text-input_textInput__KCdAH text-input_variantDark__cuoXe" value="${config.afterTime.toLocaleDateString('en-CA')}" "placeholder="1000" maxlength="50" autocomplete="on" value="">
+    </div>
+    <div> 
+        <label class="label_label__9xkbh shared_white60Variant__EC173 shared_boldWeight__U2puG label_italic__LM62Y label_uppercase__DTBcv" style="--fs: var(--font-size-16); --lh: var(--line-height-16);">Before date</label>
+        <input id="BadGuessr-beforeDate" type="date" name="content-creator-code" class="text-input_textInput__KCdAH text-input_variantDark__cuoXe" value="${config.beforeTime.toLocaleDateString('en-CA')}" "placeholder="1000" maxlength="50" autocomplete="on" value="">
+    </div>
+    `
+    baseDiv.appendChild(dateContainer)
 
     let buttonsContainer = document.createElement("div")
     buttonsContainer.style = "display: grid; grid-template-columns:1fr 1fr 1fr; gap:20px; margin-bottom: 10px;"
@@ -145,7 +162,6 @@ function drawUI() {
     buttonsContainer.appendChild(createButton("BadGuessr-loadGameData", "Load Game Data", loadGameDetails))
     buttonsContainer.appendChild(createButton("BadGuessr-export", "Export", exportBadGuesses))
     baseDiv.appendChild(buttonsContainer)
-
 
     //var loadActivityBtn = createButton("BadGuessr-loadAllActivity", "Load Activity", loadAllActivity)
     //baseDiv.appendChild(centerWrap(loadActivityBtn))
@@ -214,6 +230,16 @@ function loadConfig() {
     if (badGuessPointsInput != undefined) {
         config.badGuessPoints = Number(badGuessPointsInput.value)
     }
+
+    let afterDate = document.querySelector('#BadGuessr-afterDate')
+    if (afterDate != undefined) {
+        config.afterTime = new Date(afterDate.value)
+    }
+
+    let beforeDate = document.querySelector('#BadGuessr-beforeDate')
+    if (beforeDate != undefined) {
+        config.beforeTime = new Date(beforeDate.value)
+    }
 }
 function isBadGuess(distanceMeters, points) {
     return distanceMeters > config.badGuessDistanceKMs*1000 || points < config.badGuessPoints;
@@ -228,6 +254,10 @@ function buildLocationTags(distanceMeters, points, mapName) {
     }
 
     return tags
+}
+function isInDateRange(timeStr) {
+    let t = new Date(timeStr)
+    return t > config.afterTime && t <= config.beforeTime
 }
 const isMapIncluded = (mapName) => document.querySelector(`input[mapname="${mapName}"]`).checked
 async function exportBadGuesses() {
@@ -249,7 +279,9 @@ async function exportBadGuesses() {
                 const guess = game.player.guesses[i]
                 const round = game.rounds[i]
                 if (!isBadGuess(guess.distanceInMeters, guess.roundScoreInPoints)) continue;
+                if (!isInDateRange(round.startTime)) continue;
                 if (guess.skippedRound) continue;
+
                 badGuesses.push({
                     lat: round.lat,
                     lng: round.lng,
@@ -276,6 +308,8 @@ async function exportBadGuesses() {
                     for (let guess of player.guesses) {
                         const round = game.rounds[guess.roundNumber-1]
                         if (!isBadGuess(guess.distance, guess.score)) continue;
+                        if (!isInDateRange(round.startTime)) continue;
+
                         badGuesses.push({
                             lat: round.panorama.lat,
                             lng: round.panorama.lng,
@@ -302,6 +336,7 @@ async function exportBadGuesses() {
                 const guess = round.selfCoordinateGuess
                 if (guess == null) continue
                 if (!isBadGuess(guess.distance, 5000)) continue;
+                if (!isInDateRange(round.startTime)) continue;
 
                 badGuesses.push({
                     lat: round.lat,
