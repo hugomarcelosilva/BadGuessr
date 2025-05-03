@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BadGuessr Map Util
 // @namespace    https://github.com/hunterbdm/BadGuessr
-// @version      1.0.1
+// @version      1.0.2
 // @description  Collect your worst guesses from the activities page and export them for map creation.
 // @author       hunterbdm
 // @match        https://www.geoguessr.com/*
@@ -24,7 +24,11 @@ config.beforeTime.setDate(config.beforeTime.getDate() + 1)
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let currentTab = ""
-let duelUrls = []
+let duelUrls = {
+    moving: [],
+    noMove: [],
+    nmpz: []
+}
 let classicUrls = []
 let brUrls = []
 
@@ -61,6 +65,19 @@ function enableButton(btn, newText) {
     if (newText != undefined) {
         btn.innerText = newText
     }
+}
+function findHrefsWithPrefixAndText(prefix, anchorText) {
+    const descriptionDivs = document.querySelectorAll('div.activities_description__EXSc9');
+    const hrefs = [];
+    for (let i = 0; i < descriptionDivs.length; i++) {
+        if (descriptionDivs[i].textContent.includes(anchorText)) {
+            const link = descriptionDivs[i].querySelector('a[href^="' + prefix + '"]');
+            if (link) {
+                hrefs.push(link.href);
+            }
+        }
+    }
+    return hrefs;
 }
 function findHrefsWithPrefix(prefix) {
   const links = document.querySelectorAll('a[href^="' + prefix + '"]');
@@ -115,6 +132,17 @@ function drawUI() {
 
         return navCard;
     }
+    function createSubToggle(title, id) {
+        const toggleDiv = document.createElement('div');
+        toggleDiv.className = 'game-options_optionInput__paPBZ';
+        toggleDiv.style = 'margin-left: 20px; display: flex; align-items: center;';
+        
+        toggleDiv.innerHTML = `
+        <input id="${id}" type="checkbox" class="toggle_toggle__qfXpL" checked="">
+        <label class="label_label__9xkbh shared_white60Variant__EC173 shared_boldWeight__U2puG label_italic__LM62Y label_uppercase__DTBcv" style="--fs: var(--font-size-14); --lh: var(--line-height-14); margin-left: 5px;">${title}</label>`;
+        
+        return toggleDiv;
+    }
     function createButton(id, text, onclick) {
         var btn = document.createElement('button')
         btn.id = id
@@ -163,20 +191,42 @@ function drawUI() {
     buttonsContainer.appendChild(createButton("BadGuessr-export", "Export", exportBadGuesses))
     baseDiv.appendChild(buttonsContainer)
 
-    //var loadActivityBtn = createButton("BadGuessr-loadAllActivity", "Load Activity", loadAllActivity)
-    //baseDiv.appendChild(centerWrap(loadActivityBtn))
-
     let activityCounters = document.createElement("div")
     activityCounters.id = "BadGuessr-activityCounters"
     activityCounters.style = "display: grid; grid-template-columns:1fr 1fr 1fr; gap:20px; margin-bottom: 10px;"
     activityCounters.appendChild(createCoinCard("Classic Games", 0, "BadGuessr-classicGame"))
-    activityCounters.appendChild(createCoinCard("Duels", 0, "BadGuessr-duel"))
+
+    let duelContainer = document.createElement('div');
+    duelContainer.className = 'nav-card_tag__vQEsd coin-shop_card__gr4rX coin-shop_coinPack__74nQg';
+    duelContainer.style = "display: flex; flex-direction: column;";
+
+    duelContainer.innerHTML = `
+    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+        <div class="game-options_optionInput__paPBZ"><input id="BadGuessr-duel-include" type="checkbox" class="toggle_toggle__qfXpL" checked=""></div>
+        <label class="label_label__9xkbh shared_white60Variant__EC173 shared_boldWeight__U2puG label_italic__LM62Y label_uppercase__DTBcv" style="--fs: var(--font-size-16); --lh: var(--line-height-16);">Duels</label>
+        <label id="BadGuessr-duel-counter" class="label_label__9xkbh shared_boldWeight__U2puG label_italic__LM62Y label_uppercase__DTBcv" style="--fs: var(--font-size-30); --lh: var(--line-height-30);">0/0</label>
+    </div>
+    <div id="duel-subtypes-container" style="display: flex; flex-direction: column; margin-top: 8px;"></div>`;
+    
+    activityCounters.appendChild(duelContainer);
     activityCounters.appendChild(createCoinCard("Battle Royale", 0, "BadGuessr-br"))
     baseDiv.appendChild(activityCounters)
+
+    const duelSubtypesContainer = duelContainer.querySelector('#duel-subtypes-container');
+    duelSubtypesContainer.appendChild(createSubToggle("Moving", "BadGuessr-duel-moving"));
+    duelSubtypesContainer.appendChild(createSubToggle("No Move", "BadGuessr-duel-nomove"));
+    duelSubtypesContainer.appendChild(createSubToggle("NMPZ", "BadGuessr-duel-nmpz"));
 
     document.querySelector(".activities_switch__s09KS").after(baseDiv)
 
     updateActivityCounters()
+
+    document.querySelector('#BadGuessr-duel-include').addEventListener('change', function() {
+        const isChecked = this.checked;
+        document.querySelector('#BadGuessr-duel-moving').checked = isChecked;
+        document.querySelector('#BadGuessr-duel-nomove').checked = isChecked;
+        document.querySelector('#BadGuessr-duel-nmpz').checked = isChecked;
+    });
 }
 function drawMapSelection() {
     function createMapToggle(mapName, count) {
@@ -214,7 +264,10 @@ function drawMapSelection() {
 function updateActivityCounters() {
     try {
         document.querySelector("#BadGuessr-classicGame-counter").innerText = `${Object.keys(classicGames).length}/${classicUrls.length}`
-        document.querySelector("#BadGuessr-duel-counter").innerText = `${Object.keys(duels).length}/${duelUrls.length}`
+
+        const totalDuelUrls = duelUrls.moving.length + duelUrls.noMove.length + duelUrls.nmpz.length;
+        document.querySelector("#BadGuessr-duel-counter").innerText = `${Object.keys(duels).length}/${totalDuelUrls}`
+
         document.querySelector("#BadGuessr-br-counter").innerText = `${Object.keys(brGames).length}/${brUrls.length}`
     } catch {}
 }
@@ -267,6 +320,9 @@ async function exportBadGuesses() {
     let badGuesses = []
     let includeClassics = document.querySelector("#BadGuessr-classicGame-include").checked
     let includeDuels = document.querySelector("#BadGuessr-duel-include").checked
+    let includeMovingDuels = document.querySelector("#BadGuessr-duel-moving").checked
+    let includeNoMoveDuels = document.querySelector("#BadGuessr-duel-nomove").checked
+    let includeNMPZDuels = document.querySelector("#BadGuessr-duel-nmpz").checked
     let includeBRs = document.querySelector("#BadGuessr-br-include").checked
 
     if (includeClassics) {
@@ -299,6 +355,17 @@ async function exportBadGuesses() {
     if (includeDuels) {
         for (let gameId in duels) {
             const game = duels[gameId]
+
+            const gameType = game.movementOptions.forbidMoving ? 
+                             (game.movementOptions.forbidRotating ? "nmpz" : "nomove") : 
+                             "moving";
+
+            if ((gameType === "moving" && !includeMovingDuels) ||
+                (gameType === "nomove" && !includeNoMoveDuels) ||
+                (gameType === "nmpz" && !includeNMPZDuels)) {
+                continue;
+            }
+
             if (!isMapIncluded(game.options.map.name)) continue;
 
             for (let team of game.teams) {
@@ -366,7 +433,10 @@ function getGameUrls() {
             currentTab = selectedTab
         }
 
-        duelUrls = findHrefsWithPrefix("/duels/")
+        duelUrls.moving = findHrefsWithPrefixAndText("/duels/", "Moving Duels");
+        duelUrls.noMove = findHrefsWithPrefixAndText("/duels/", "No Move Duels");
+        duelUrls.nmpz = findHrefsWithPrefixAndText("/duels/", "NMPZ Duels");
+
         classicUrls = findHrefsWithPrefix("/results/")
         brUrls = findHrefsWithPrefix("/battle-royale/")
     } catch{}
@@ -408,6 +478,9 @@ async function loadGameDetails() {
 
         let includeClassics = document.querySelector("#BadGuessr-classicGame-include")
         let includeDuels = document.querySelector("#BadGuessr-duel-include")
+        let includeMovingDuels = document.querySelector("#BadGuessr-duel-moving")
+        let includeNoMoveDuels = document.querySelector("#BadGuessr-duel-nomove")
+        let includeNMPZDuels = document.querySelector("#BadGuessr-duel-nmpz")
         let includeBRs = document.querySelector("#BadGuessr-br-include")
     
         for (let i = 0; i < classicUrls.length && includeClassics.checked; i++) {
@@ -429,15 +502,15 @@ async function loadGameDetails() {
             updateActivityCounters()
         }
     
-        for (let i = 0; i < duelUrls.length && includeDuels.checked; i++) {
-            let url = duelUrls[i]
+        for (let i = 0; i < duelUrls.moving.length && includeDuels.checked && includeMovingDuels.checked; i++) {
+            let url = duelUrls.moving[i]
             let gameId = url.split("/duels/")[1].split("/")[0]
             if (duels[gameId] != undefined) {
-                console.log(`Skipping already processed duel: ${gameId}`)
+                console.log(`Skipping already processed moving duel: ${gameId}`)
                 continue
             }
     
-            console.log(`Fetching duel: ${gameId}`)
+            console.log(`Fetching moving duel: ${gameId}`)
             let nextData = await getNextDataJson(url)
             let gameDetails = nextData.props.pageProps.game
             duels[gameId] = gameDetails
@@ -448,6 +521,50 @@ async function loadGameDetails() {
                 maps[gameDetails.options.map.name] = 1
             }
     
+            updateActivityCounters()
+        }
+
+        for (let i = 0; i < duelUrls.noMove.length && includeDuels.checked && includeNoMoveDuels.checked; i++) {
+            let url = duelUrls.noMove[i]
+            let gameId = url.split("/duels/")[1].split("/")[0]
+            if (duels[gameId] != undefined) {
+                console.log(`Skipping already processed no move duel: ${gameId}`)
+                continue
+            }
+    
+            console.log(`Fetching no move duel: ${gameId}`)
+            let nextData = await getNextDataJson(url)
+            let gameDetails = nextData.props.pageProps.game
+            duels[gameId] = gameDetails
+    
+            if (maps[gameDetails.options.map.name] != undefined) {
+                maps[gameDetails.options.map.name] += 1
+            } else {
+                maps[gameDetails.options.map.name] = 1
+            }
+    
+            updateActivityCounters()
+        }
+
+        for (let i = 0; i < duelUrls.nmpz.length && includeDuels.checked && includeNMPZDuels.checked; i++) {
+            let url = duelUrls.nmpz[i]
+            let gameId = url.split("/duels/")[1].split("/")[0]
+            if (duels[gameId] != undefined) {
+                    console.log(`Skipping already processed NMPZ duel: ${gameId}`)
+                    continue
+                }
+        
+                console.log(`Fetching NMPZ duel: ${gameId}`)
+                let nextData = await getNextDataJson(url)
+                let gameDetails = nextData.props.pageProps.game
+                duels[gameId] = gameDetails
+        
+                if (maps[gameDetails.options.map.name] != undefined) {
+                    maps[gameDetails.options.map.name] += 1
+                } else {
+                    maps[gameDetails.options.map.name] = 1
+                }
+        
             updateActivityCounters()
         }
     
