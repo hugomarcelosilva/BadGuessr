@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BadGuessr Map Util
 // @namespace    https://github.com/hunterbdm/BadGuessr
-// @version      1.0.2
+// @version      1.1.0
 // @description  Collect your worst guesses from the activities page and export them for map creation.
 // @author       hunterbdm
 // @match        https://www.geoguessr.com/*
@@ -24,13 +24,13 @@ config.beforeTime.setDate(config.beforeTime.getDate() + 1)
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let currentTab = ""
-let duelUrls = {
+let duelsTypes = {
     moving: [],
     noMove: [],
     nmpz: []
 }
-let classicUrls = []
-let brUrls = []
+let classic = []
+let battleRoyale = []
 
 let duels = {}
 let classicGames = {}
@@ -66,53 +66,17 @@ function enableButton(btn, newText) {
         btn.innerText = newText
     }
 }
-function findHrefsWithPrefixAndText(prefix, anchorText) {
-    const descriptionDivs = document.querySelectorAll('div.activities_description__EXSc9');
-    const hrefs = [];
-    for (let i = 0; i < descriptionDivs.length; i++) {
-        if (descriptionDivs[i].textContent.includes(anchorText)) {
-            const link = descriptionDivs[i].querySelector('a[href^="' + prefix + '"]');
-            if (link) {
-                hrefs.push(link.href);
-            }
-        }
-    }
-    return hrefs;
-}
-function findHrefsWithPrefix(prefix) {
-  const links = document.querySelectorAll('a[href^="' + prefix + '"]');
-  const hrefs = [];
-  for (let i = 0; i < links.length; i++) {
-    hrefs.push(links[i].href);
-  }
-  return hrefs;
-}
 async function getJson(url) {
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+        credentials: 'include'
+    });
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
     }
 
     return await response.json();
-  } catch (error) {
-    console.error('Request failed:', error);
-    throw error;
-  }
-}
-async function getNextDataJson(url) {
-  try {
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    let htmlBody = await response.text()
-    let nextData = htmlBody.split(`<script id="__NEXT_DATA__" type="application/json">`)[1].split(`</script>`)[0]
-
-    return JSON.parse(nextData)
   } catch (error) {
     console.error('Request failed:', error);
     throw error;
@@ -263,12 +227,12 @@ function drawMapSelection() {
 }
 function updateActivityCounters() {
     try {
-        document.querySelector("#BadGuessr-classicGame-counter").innerText = `${Object.keys(classicGames).length}/${classicUrls.length}`
+        document.querySelector("#BadGuessr-classicGame-counter").innerText = `${Object.keys(classicGames).length}/${classic.length}`
 
-        const totalDuelUrls = duelUrls.moving.length + duelUrls.noMove.length + duelUrls.nmpz.length;
-        document.querySelector("#BadGuessr-duel-counter").innerText = `${Object.keys(duels).length}/${totalDuelUrls}`
+        const totalDuelTypes = duelsTypes.moving.length + duelsTypes.noMove.length + duelsTypes.nmpz.length;
+        document.querySelector("#BadGuessr-duel-counter").innerText = `${Object.keys(duels).length}/${totalDuelTypes}`
 
-        document.querySelector("#BadGuessr-br-counter").innerText = `${Object.keys(brGames).length}/${brUrls.length}`
+        document.querySelector("#BadGuessr-br-counter").innerText = `${Object.keys(brGames).length}/${battleRoyale.length}`
     } catch {}
 }
 
@@ -422,29 +386,37 @@ async function exportBadGuesses() {
     console.log(badGuesses)
     downloadJSON(badGuesses)
 }
-function getGameUrls() {
-    try {
-        let selectedTab = document.querySelector(".switch_show__V6W5T").nextSibling.innerText
-        if (selectedTab != currentTab) {
-            // Tab changed, so clear game data so counters don't get messed up
-            duels = {}
-            classicGames = {}
-            brGames = {}
-            currentTab = selectedTab
+
+function loadGames(json, gameMode, competitiveGameMode) {
+    // Extract games from current page
+    let games = json.entries.filter((d) => {
+        const payload = JSON.parse(d.payload);
+        return d.payload 
+            && payload.gameMode === gameMode 
+            && (!competitiveGameMode || payload.competitiveGameMode === competitiveGameMode);
+    });
+
+    let folders = json.entries.filter((f) => f.type === 7);
+    folders.forEach((f) => {
+        let d = JSON.parse(f.payload);
+        for (let i = 0; i < d.length; i++) {
+            if (
+                d[i].payload?.gameMode === gameMode &&
+                (!competitiveGameMode || d[i].payload?.competitiveGameMode === competitiveGameMode)
+            ) {
+                games.push(d[i]);
+            }
         }
+    });
 
-        duelUrls.moving = findHrefsWithPrefixAndText("/duels/", "Moving Duels");
-        duelUrls.noMove = findHrefsWithPrefixAndText("/duels/", "No Move Duels");
-        duelUrls.nmpz = findHrefsWithPrefixAndText("/duels/", "NMPZ Duels");
-
-        classicUrls = findHrefsWithPrefix("/results/")
-        brUrls = findHrefsWithPrefix("/battle-royale/")
-    } catch{}
+    return games;
 }
+
 async function getUserID() {
     let profile = await getJson("https://www.geoguessr.com/api/v3/profiles")
     return profile.user.id
 }
+
 async function loadAllActivity() {
     console.log("Attempting to load all activity")
     let loadActivityBtn = document.querySelector("#BadGuessr-loadAllActivity")
@@ -452,21 +424,64 @@ async function loadAllActivity() {
     disableButton(loadActivityBtn)
     loadActivityBtn.innerText = "Loading Activity..."
 
+    duelsTypes = {
+        moving: [],
+        noMove: [],
+        nmpz: []
+    }
+    classic = []
+    battleRoyale = []
+
+    let includeClassics = document.querySelector("#BadGuessr-classicGame-include").checked
+    let includeDuels = document.querySelector("#BadGuessr-duel-include").checked
+    let includeMovingDuels = document.querySelector("#BadGuessr-duel-moving").checked
+    let includeNoMoveDuels = document.querySelector("#BadGuessr-duel-nomove").checked
+    let includeNMPZDuels = document.querySelector("#BadGuessr-duel-nmpz").checked
+    let includeBRs = document.querySelector("#BadGuessr-br-include").checked
+    let paginationToken = null
+
     try {
-        while (true) {
-            document.querySelector("#__next > div.background_wrapper__BE727.background_backgroundClassic__Sjpbl > div.version4_layout__XumXk > div.version4_content__ukQvy.version4_resetOverflow__IVwXw > main > div > div > div > div > button").click()
-            await sleep(500)
+        do {
+            // Build URL with pagination token if available
+            let url = "https://www.geoguessr.com/api/v4/feed/private?count=26";
+            if (paginationToken) {
+                url += `&paginationToken=${encodeURIComponent(paginationToken)}`;
+            }
 
-            getGameUrls()
+            // Fetch data
+            let response = await fetch(url);
+            let json = await response.json();
+
+            if (includeClassics) {
+                classic = classic.concat(loadGames(json, "Standard", null))
+            }
+            if (includeDuels) {
+                if (includeMovingDuels) {
+                    duelsTypes.moving = duelsTypes.moving.concat(loadGames(json, "Duels", "StandardDuels"))
+                }
+                if (includeNoMoveDuels) {
+                    duelsTypes.noMove = duelsTypes.noMove.concat(loadGames(json, "Duels", "NoMoveDuels"))
+                }
+                if (includeNMPZDuels) {
+                    duelsTypes.nmpz = duelsTypes.nmpz.concat(loadGames(json, "Duels", "NMPZDuels"))
+                }
+            }
+            if (includeBRs) {
+                battleRoyale = battleRoyale.concat(loadGames(json, "BattleRoyaleDistance", "StandardDuels"))
+            }
+
             updateActivityCounters()
-        }
-    } catch(e) {
-        enableButton(loadActivityBtn)
-        loadActivityBtn.innerText = "Load all Activity"
 
-        getGameUrls()
+            // Update pagination token for next iteration
+            paginationToken = json.paginationToken;
+        } while (paginationToken); // Continue while there's a pagination token  
+    } catch(e) {
+        console.error(e)
         updateActivityCounters()
         return
+    } finally {
+        enableButton(loadActivityBtn)
+        loadActivityBtn.innerText = "Load all Activity"
     }
 }
 async function loadGameDetails() {
@@ -476,124 +491,142 @@ async function loadGameDetails() {
     try {
         disableButton(loadGameDataBtn, "Fetching game data...")
 
-        let includeClassics = document.querySelector("#BadGuessr-classicGame-include")
-        let includeDuels = document.querySelector("#BadGuessr-duel-include")
-        let includeMovingDuels = document.querySelector("#BadGuessr-duel-moving")
-        let includeNoMoveDuels = document.querySelector("#BadGuessr-duel-nomove")
-        let includeNMPZDuels = document.querySelector("#BadGuessr-duel-nmpz")
-        let includeBRs = document.querySelector("#BadGuessr-br-include")
+        let includeClassics = document.querySelector("#BadGuessr-classicGame-include").checked
+        let includeDuels = document.querySelector("#BadGuessr-duel-include").checked
+        let includeMovingDuels = document.querySelector("#BadGuessr-duel-moving").checked
+        let includeNoMoveDuels = document.querySelector("#BadGuessr-duel-nomove").checked
+        let includeNMPZDuels = document.querySelector("#BadGuessr-duel-nmpz").checked
+        let includeBRs = document.querySelector("#BadGuessr-br-include").checked
     
-        for (let i = 0; i < classicUrls.length && includeClassics.checked; i++) {
-            let gameId = classicUrls[i].split("/results/")[1]
-            if (classicGames[gameId] != undefined) {
-                console.log(`Skipping already processed classic game: ${gameId}`)
+        for (let i = 0; i < classic.length && includeClassics; i++) {
+            let game = classic[i]
+
+            const gamePayload = typeof game.payload === 'string' ? JSON.parse(game.payload) : game.payload;
+            const gameToken = gamePayload.gameToken
+
+            if (classicGames[gameToken] != undefined) {
+                console.log(`Skipping already processed classic game: ${gameToken}`)
                 continue
             }
     
-            console.log(`Fetching classic game: ${gameId}`)
-            let gameDetails = await getJson(`https://www.geoguessr.com/api/v3/games/${gameId}`)
-            classicGames[gameId] = gameDetails
+            console.log(`Fetching classic game: ${gameToken}`)
+            let url = `https://www.geoguessr.com/api/v3/games/${gameToken}`
+
+            let gameSummary = await getJson(url)
+            classicGames[gameToken] = gameSummary
     
-            if (maps[gameDetails.mapName] != undefined) {
-                maps[gameDetails.mapName] += 1
+            if (maps[gameSummary.mapName] != undefined) {
+                maps[gameSummary.mapName] += 1
             } else {
-                maps[gameDetails.mapName] = 1
+                maps[gameSummary.mapName] = 1
             }
             updateActivityCounters()
         }
     
-        for (let i = 0; i < duelUrls.moving.length && includeDuels.checked && includeMovingDuels.checked; i++) {
-            let url = duelUrls.moving[i]
-            let gameId = url.split("/duels/")[1].split("/")[0]
+        for (let i = 0; i < duelsTypes.moving.length && includeDuels && includeMovingDuels; i++) {
+            let game = duelsTypes.moving[i]
+
+            const gamePayload = typeof game.payload === 'string' ? JSON.parse(game.payload) : game.payload;
+            const gameId = gamePayload.gameId
+
             if (duels[gameId] != undefined) {
                 console.log(`Skipping already processed moving duel: ${gameId}`)
                 continue
             }
     
             console.log(`Fetching moving duel: ${gameId}`)
-            let nextData = await getNextDataJson(url)
-            let gameDetails = nextData.props.pageProps.game
-            duels[gameId] = gameDetails
+            let url = `https://game-server.geoguessr.com/api/duels/${gameId}`
+
+            let gameSummary = await getJson(url)
+            duels[gameId] = gameSummary
     
-            if (maps[gameDetails.options.map.name] != undefined) {
-                maps[gameDetails.options.map.name] += 1
+            if (maps[gameSummary.options.map.name] != undefined) {
+                maps[gameSummary.options.map.name] += 1
             } else {
-                maps[gameDetails.options.map.name] = 1
+                maps[gameSummary.options.map.name] = 1
             }
     
             updateActivityCounters()
         }
 
-        for (let i = 0; i < duelUrls.noMove.length && includeDuels.checked && includeNoMoveDuels.checked; i++) {
-            let url = duelUrls.noMove[i]
-            let gameId = url.split("/duels/")[1].split("/")[0]
+        for (let i = 0; i < duelsTypes.noMove.length && includeDuels && includeNoMoveDuels; i++) {
+            let game = duelsTypes.noMove[i]
+
+            const gamePayload = typeof game.payload === 'string' ? JSON.parse(game.payload) : game.payload;
+            const gameId = gamePayload.gameId
+            
             if (duels[gameId] != undefined) {
                 console.log(`Skipping already processed no move duel: ${gameId}`)
                 continue
             }
     
             console.log(`Fetching no move duel: ${gameId}`)
-            let nextData = await getNextDataJson(url)
-            let gameDetails = nextData.props.pageProps.game
-            duels[gameId] = gameDetails
+            let url = `https://game-server.geoguessr.com/api/duels/${gameId}`
+
+            let gameSummary = await getJson(url)
+            duels[gameId] = gameSummary
     
-            if (maps[gameDetails.options.map.name] != undefined) {
-                maps[gameDetails.options.map.name] += 1
+            if (maps[gameSummary.options.map.name] != undefined) {
+                maps[gameSummary.options.map.name] += 1
             } else {
-                maps[gameDetails.options.map.name] = 1
+                maps[gameSummary.options.map.name] = 1
             }
     
             updateActivityCounters()
         }
 
-        for (let i = 0; i < duelUrls.nmpz.length && includeDuels.checked && includeNMPZDuels.checked; i++) {
-            let url = duelUrls.nmpz[i]
-            let gameId = url.split("/duels/")[1].split("/")[0]
+        for (let i = 0; i < duelsTypes.nmpz.length && includeDuels && includeNMPZDuels; i++) {
+            let game = duelsTypes.nmpz[i]
+
+            const gamePayload = typeof game.payload === 'string' ? JSON.parse(game.payload) : game.payload;
+            const gameId = gamePayload.gameId
+
             if (duels[gameId] != undefined) {
-                    console.log(`Skipping already processed NMPZ duel: ${gameId}`)
-                    continue
-                }
-        
-                console.log(`Fetching NMPZ duel: ${gameId}`)
-                let nextData = await getNextDataJson(url)
-                let gameDetails = nextData.props.pageProps.game
-                duels[gameId] = gameDetails
-        
-                if (maps[gameDetails.options.map.name] != undefined) {
-                    maps[gameDetails.options.map.name] += 1
-                } else {
-                    maps[gameDetails.options.map.name] = 1
-                }
-        
-            updateActivityCounters()
-        }
-    
-        for (let i = 0; i < brUrls.length && includeBRs.checked; i++) {
-            let url = brUrls[i]
-            let gameId = url.split("/battle-royale/")[1].split("/")[0]
-            if (brGames[gameId] != undefined) {
-                console.log(`Skipping already processed BR game: ${gameId}`)
+                console.log(`Skipping already processed NMPZ duel: ${gameId}`)
                 continue
             }
     
-            console.log(`Fetching BR: ${gameId}`)
-            let nextData = await getNextDataJson(url)
-            let gameDetails = {
-                isDistance: nextData.props.pageProps.isDistance,
-                isParticipant: nextData.props.pageProps.isParticipant,
-                summary: nextData.props.pageProps.summary,
-                lobby: nextData.props.pageProps.lobby,
-            }
-            brGames[gameId] = gameDetails
+            console.log(`Fetching NMPZ duel: ${gameId}`)
+            let url = `https://game-server.geoguessr.com/api/duels/${gameId}`
+
+            let gameSummary = await getJson(url)
+            duels[gameId] = gameSummary
     
-            if (maps[gameDetails.lobby.mapName] != undefined) {
-                maps[gameDetails.lobby.mapName] += 1
+            if (maps[gameSummary.options.map.name] != undefined) {
+                maps[gameSummary.options.map.name] += 1
             } else {
-                maps[gameDetails.lobby.mapName] = 1
+                maps[gameSummary.options.map.name] = 1
             }
-    
+        
             updateActivityCounters()
         }
+    
+        // for (let i = 0; i < battleRoyale.length && includeBRs; i++) {
+        //     let url = battleRoyale[i]
+        //     let gameId = url.split("/battle-royale/")[1].split("/")[0]
+        //     if (brGames[gameId] != undefined) {
+        //         console.log(`Skipping already processed BR game: ${gameId}`)
+        //         continue
+        //     }
+    
+        //     console.log(`Fetching BR: ${gameId}`)
+        //     let nextData = await getNextDataJson(url)
+        //     let gameDetails = {
+        //         isDistance: nextData.props.pageProps.isDistance,
+        //         isParticipant: nextData.props.pageProps.isParticipant,
+        //         summary: nextData.props.pageProps.summary,
+        //         lobby: nextData.props.pageProps.lobby,
+        //     }
+        //     brGames[gameId] = gameDetails
+    
+        //     if (maps[gameDetails.lobby.mapName] != undefined) {
+        //         maps[gameDetails.lobby.mapName] += 1
+        //     } else {
+        //         maps[gameDetails.lobby.mapName] = 1
+        //     }
+    
+        //     updateActivityCounters()
+        // }
     } catch(e) {
         console.error(e)
     }
@@ -605,9 +638,7 @@ async function loadGameDetails() {
 (async function() {
     'use strict';
 
-    getGameUrls()
     setInterval(() => {
-        getGameUrls()
         updateActivityCounters()
     }, 250)
 
