@@ -519,7 +519,11 @@ async function loadGameDetails() {
             const gamePayload = typeof game.payload === 'string' ? JSON.parse(game.payload) : game.payload;
             const gameToken = gamePayload.gameToken
 
-            if (classicGames[gameToken] != undefined) {
+            if (gameToken == undefiend) {
+                // TODO add support for daily challenges
+                console.log("Skipping classic game without gameToken (likely daily challenge)")
+                continue
+            } else if (classicGames[gameToken] != undefined) {
                 console.log(`Skipping already processed classic game: ${gameToken}`)
                 continue
             }
