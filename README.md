@@ -5,9 +5,9 @@ Collect your worst guesses from the activities page and export them for map crea
 
 ## How to Use
 0. Go to the [GeoGuessr activities page](https://www.geoguessr.com/me/activities)
-1. Scroll down and click "More" to load more games, or click "Load Activity" to have it automatically load all available activity.
+1. Click "Load Activity" to have it automatically load all available activity.
 2. Disable game modes you don't want to include. (Classic Games/Duels/Battle Royale)
-3. Click "Load Game Data" and wait for it to collect all game details. If you want to stop it early you can toggle the specific game type and it will skip it.
+3. Click "Load Game Data" and wait for it to collect all game details.
 4. Disable any maps/game modes you don't want to include in your export.
 5. Set the distance & points that are considered a "bad guess".
 6. Click "Export"
@@ -18,4 +18,4 @@ Collect your worst guesses from the activities page and export them for map crea
 - Country battle royale games may not work currently, disable battle royale before export to avoid this issue.
 
 ## Preview
-![image](https://i.imgur.com/1tKXgvk.png)
+![image](https://i.imgur.com/54qouOm.png)
