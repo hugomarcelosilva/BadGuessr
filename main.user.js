@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BadGuessr Map Util
 // @namespace    https://github.com/hunterbdm/BadGuessr
-// @version      1.1.0
+// @version      1.1.1
 // @description  Collect your worst guesses from the activities page and export them for map creation.
 // @author       hunterbdm
 // @match        https://www.geoguessr.com/*
@@ -461,6 +461,14 @@ async function loadAllActivity() {
             let response = await fetch(url);
             let json = await response.json();
 
+            // Track if any new games were found in this batch
+            let newGamesFound = 0;
+            let classicBefore = classic.length;
+            let duelMovingBefore = duelsTypes.moving.length;
+            let duelNoMoveBefore = duelsTypes.noMove.length;
+            let duelNMPZBefore = duelsTypes.nmpz.length;
+            let brBefore = battleRoyale.length;
+
             if (includeClassics) {
                 classic = classic.concat(loadGames(json, "Standard", null))
             }
@@ -479,10 +487,24 @@ async function loadAllActivity() {
                 battleRoyale = battleRoyale.concat(loadGames(json, "BattleRoyaleDistance", "StandardDuels"))
             }
 
+            // Calculate how many new games were found in this batch
+            newGamesFound = 
+                (includeClassics ? classic.length - classicBefore : 0) +
+                (includeDuels && includeMovingDuels ? duelsTypes.moving.length - duelMovingBefore : 0) +
+                (includeDuels && includeNoMoveDuels ? duelsTypes.noMove.length - duelNoMoveBefore : 0) +
+                (includeDuels && includeNMPZDuels ? duelsTypes.nmpz.length - duelNMPZBefore : 0) +
+                (includeBRs ? battleRoyale.length - brBefore : 0);
+
             updateActivityCounters()
 
             // Update pagination token for next iteration
             paginationToken = json.paginationToken;
+            
+            // If no new games were found in the date range and we have more pages, stop paginating
+            if (newGamesFound === 0 && paginationToken) {
+                console.log("No new games found in date range, stopping pagination");
+                break;
+            }
         } while (paginationToken); // Continue while there's a pagination token  
     } catch(e) {
         console.error(e)
