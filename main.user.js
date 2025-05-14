@@ -277,6 +277,7 @@ function isInDateRange(timeStr) {
     return t > config.afterTime && t <= config.beforeTime
 }
 const isMapIncluded = (mapName) => document.querySelector(`input[mapname="${mapName}"]`).checked
+
 async function exportBadGuesses() {
     loadConfig()
 
@@ -360,25 +361,28 @@ async function exportBadGuesses() {
     if (includeBRs) {
         for (let gameId in brGames) {
             const game = brGames[gameId]
-            if (!game.lobby.playerIds.includes(userId)) continue;
-            if (!isMapIncluded(game.lobby.mapName)) continue;
 
-            for (let round of game.summary.rounds) {
-                const guess = round.selfCoordinateGuess
-                if (guess == null) continue
-                if (!isBadGuess(guess.distance, 5000)) continue;
-                if (!isInDateRange(round.startTime)) continue;
+            if (!isMapIncluded('World')) continue;
 
-                badGuesses.push({
-                    lat: round.lat,
-                    lng: round.lng,
-                    heading: round.heading,
-                    pitch: round.pitch,
-                    zoom: round.zoom,
-                    extra: {
-                        tags: buildLocationTags(guess.distance, null, game.lobby.mapName)
-                    }
-                })
+            for (let player of game.players) {
+                if (player.playerId != userId) continue;
+                
+                for (let guess of player.coordinateGuesses) {
+                    const round = game.rounds[guess.roundNumber-1]
+                    if (!isBadGuess(guess.distance, 5000)) continue;
+                    if (!isInDateRange(round.startTime)) continue;
+    
+                    badGuesses.push({
+                        lat: round.lat,
+                        lng: round.lng,
+                        heading: round.heading,
+                        pitch: round.pitch,
+                        zoom: round.zoom,
+                        extra: {
+                            tags: buildLocationTags(guess.distance, null, 'World')
+                        }
+                    })
+                }
             }
         }
     }
@@ -393,18 +397,18 @@ function loadGames(json, gameMode, competitiveGameMode) {
         const payload = JSON.parse(d.payload);
         return d.payload 
             && payload.gameMode === gameMode 
-            && (!competitiveGameMode || payload.competitiveGameMode === competitiveGameMode);
+            && (!competitiveGameMode || payload.competitiveGameMode === competitiveGameMode)
+            && isInDateRange(d.time);
     });
 
     let folders = json.entries.filter((f) => f.type === 7);
     folders.forEach((f) => {
         let d = JSON.parse(f.payload);
+
         for (let i = 0; i < d.length; i++) {
-            if (
-                d[i].payload?.gameMode === gameMode &&
-                (!competitiveGameMode || d[i].payload?.competitiveGameMode === competitiveGameMode)
-            ) {
-                games.push(d[i]);
+            if (isInDateRange(d[i].time) && d[i].payload?.gameMode === gameMode && 
+                (!competitiveGameMode || d[i].payload?.competitiveGameMode === competitiveGameMode)) {
+                    games.push(d[i]);
             }
         }
     });
@@ -420,9 +424,14 @@ async function getUserID() {
 async function loadAllActivity() {
     console.log("Attempting to load all activity")
     let loadActivityBtn = document.querySelector("#BadGuessr-loadAllActivity")
+    let loadGameDataBtn = document.querySelector("#BadGuessr-loadGameData")
+    let exportBadGuessesBtn = document.querySelector("#BadGuessr-export")
 
-    disableButton(loadActivityBtn)
-    loadActivityBtn.innerText = "Loading Activity..."
+    disableButton(loadActivityBtn, "Loading Activity...")
+    disableButton(loadGameDataBtn)
+    disableButton(exportBadGuessesBtn)
+
+    loadConfig()
 
     duelsTypes = {
         moving: [],
@@ -481,16 +490,22 @@ async function loadAllActivity() {
         return
     } finally {
         enableButton(loadActivityBtn)
+        enableButton(loadGameDataBtn)
+        enableButton(exportBadGuessesBtn)
         loadActivityBtn.innerText = "Load all Activity"
     }
 }
+
 async function loadGameDetails() {
+    let loadActivityBtn = document.querySelector("#BadGuessr-loadAllActivity")
     let loadGameDataBtn = document.querySelector("#BadGuessr-loadGameData")
+    let exportBadGuessesBtn = document.querySelector("#BadGuessr-export")
     if (loadGameDataBtn == undefined) return;
 
     try {
+        disableButton(loadActivityBtn)
         disableButton(loadGameDataBtn, "Fetching game data...")
-
+        disableButton(exportBadGuessesBtn)
         let includeClassics = document.querySelector("#BadGuessr-classicGame-include").checked
         let includeDuels = document.querySelector("#BadGuessr-duel-include").checked
         let includeMovingDuels = document.querySelector("#BadGuessr-duel-moving").checked
@@ -601,37 +616,39 @@ async function loadGameDetails() {
             updateActivityCounters()
         }
     
-        // for (let i = 0; i < battleRoyale.length && includeBRs; i++) {
-        //     let url = battleRoyale[i]
-        //     let gameId = url.split("/battle-royale/")[1].split("/")[0]
-        //     if (brGames[gameId] != undefined) {
-        //         console.log(`Skipping already processed BR game: ${gameId}`)
-        //         continue
-        //     }
+        for (let i = 0; i < battleRoyale.length && includeBRs; i++) {
+            let game = battleRoyale[i]
+
+            const gamePayload = typeof game.payload === 'string' ? JSON.parse(game.payload) : game.payload;
+            const gameId = gamePayload.gameId
+
+            if (brGames[gameId] != undefined) {
+                console.log(`Skipping already processed BR game: ${gameId}`)
+                continue
+            }
     
-        //     console.log(`Fetching BR: ${gameId}`)
-        //     let nextData = await getNextDataJson(url)
-        //     let gameDetails = {
-        //         isDistance: nextData.props.pageProps.isDistance,
-        //         isParticipant: nextData.props.pageProps.isParticipant,
-        //         summary: nextData.props.pageProps.summary,
-        //         lobby: nextData.props.pageProps.lobby,
-        //     }
-        //     brGames[gameId] = gameDetails
+            console.log(`Fetching BR: ${gameId}`)
+            let url = `https://game-server.geoguessr.com/api/battle-royale/${gameId}`
+
+            let gameSummary = await getJson(url)
+            brGames[gameId] = gameSummary
     
-        //     if (maps[gameDetails.lobby.mapName] != undefined) {
-        //         maps[gameDetails.lobby.mapName] += 1
-        //     } else {
-        //         maps[gameDetails.lobby.mapName] = 1
-        //     }
+            if (maps.World != undefined) {
+                maps.World += 1
+            } else {
+                maps.World = 1
+            }
     
-        //     updateActivityCounters()
-        // }
+            updateActivityCounters()
+        }
     } catch(e) {
         console.error(e)
     }
 
+    enableButton(loadActivityBtn)
     enableButton(loadGameDataBtn, "Load game data")
+    enableButton(exportBadGuessesBtn)
+
     drawMapSelection()
 }
 
