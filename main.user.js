@@ -516,6 +516,14 @@ async function getUserID() {
     return profile.user.id
 }
 
+function findCurrentRoundData(rounds, currentRoundNumber) {
+    return rounds.find(
+        (round) =>
+        round.roundNumber === currentRoundNumber ||
+        rounds.indexOf(round) === currentRoundNumber - 1
+    );
+}
+
 async function extractDuelsGuess(jsonData) {
     if (
         !jsonData?.teams ||
@@ -654,7 +662,7 @@ async function extractBRDistanceGuess(jsonData) {
 return null;
 }
 
-async function extractChallengeGuess(jsonData) {
+async function extractClassicGuess(jsonData) {
     if (!jsonData?.player?.guesses || !jsonData?.rounds || !jsonData?.round) {
         return null;
     }
@@ -732,10 +740,12 @@ async function loadAllActivity() {
     console.log("Attempting to load all activity")
     let loadActivityBtn = document.querySelector("#BadGuessr-loadAllActivity")
     let loadGameDataBtn = document.querySelector("#BadGuessr-loadGameData")
+    let loadGameLocsBtn = document.querySelector("#BadGuessr-loadGameLocs")
     let exportBadGuessesBtn = document.querySelector("#BadGuessr-export")
 
     disableButton(loadActivityBtn, "Loading Activity...")
     disableButton(loadGameDataBtn)
+    disableButton(loadGameLocsBtn)
     disableButton(exportBadGuessesBtn)
 
     loadConfig()
@@ -820,6 +830,7 @@ async function loadAllActivity() {
     } finally {
         enableButton(loadActivityBtn)
         enableButton(loadGameDataBtn)
+        enableButton(loadGameLocsBtn)
         enableButton(exportBadGuessesBtn)
         loadActivityBtn.innerText = "Load all Activity"
     }
@@ -1028,6 +1039,69 @@ async function loadGameLocs() {
             await processApiResponse(gameSummary, ENDPOINTS.CLASSIC_GUESS);
             updateActivityCounters()
         }
+
+        for (let i = 0; i < duelsTypes.moving.length && includeDuels && includeMovingDuels; i++) {
+            let game = duelsTypes.moving[i]
+
+            const gamePayload = typeof game.payload === 'string' ? JSON.parse(game.payload) : game.payload;
+            const gameId = gamePayload.gameId
+
+            if (duels[gameId] != undefined) {
+                console.log(`Skipping already processed moving duel: ${gameId}`)
+                continue
+            }
+    
+            console.log(`Fetching moving duel: ${gameId}`)
+            let url = `https://game-server.geoguessr.com/api/duels/${gameId}`
+
+            let gameSummary = await getJson(url)
+            duels[gameId] = gameSummary
+    
+            await processApiResponse(gameSummary, ENDPOINTS.DUELS_GUESS);
+            updateActivityCounters()
+        }
+
+        for (let i = 0; i < duelsTypes.noMove.length && includeDuels && includeNoMoveDuels; i++) {
+            let game = duelsTypes.noMove[i]
+
+            const gamePayload = typeof game.payload === 'string' ? JSON.parse(game.payload) : game.payload;
+            const gameId = gamePayload.gameId
+
+            if (duels[gameId] != undefined) {
+                console.log(`Skipping already processed no move duel: ${gameId}`)
+                continue
+            }
+    
+            console.log(`Fetching moving duel: ${gameId}`)
+            let url = `https://game-server.geoguessr.com/api/duels/${gameId}`
+
+            let gameSummary = await getJson(url)
+            duels[gameId] = gameSummary
+    
+            await processApiResponse(gameSummary, ENDPOINTS.DUELS_GUESS);
+            updateActivityCounters()
+        }
+
+        for (let i = 0; i < duelsTypes.nmpz.length && includeDuels && includeNMPZDuels; i++) {
+            let game = duelsTypes.nmpz[i]
+
+            const gamePayload = typeof game.payload === 'string' ? JSON.parse(game.payload) : game.payload;
+            const gameId = gamePayload.gameId
+
+            if (duels[gameId] != undefined) {
+                console.log(`Skipping already processed NMPZ duel: ${gameId}`)
+                continue
+            }
+    
+            console.log(`Fetching moving duel: ${gameId}`)
+            let url = `https://game-server.geoguessr.com/api/duels/${gameId}`
+
+            let gameSummary = await getJson(url)
+            duels[gameId] = gameSummary
+    
+            await processApiResponse(gameSummary, ENDPOINTS.DUELS_GUESS);
+            updateActivityCounters()
+        }
     } catch(e) {
         console.error(e)
     }
@@ -1036,8 +1110,6 @@ async function loadGameLocs() {
     enableButton(loadActivityBtn)
     enableButton(loadGameDataBtn)
     enableButton(exportBadGuessesBtn)
-
-
 }
 
 (async function() {
