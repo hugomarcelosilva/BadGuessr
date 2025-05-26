@@ -47,10 +47,9 @@ const ENDPOINTS = {
 
 const CONFIG = {
     /* SUPABASE_URL, SUPABASE_KEY and GEOGUESSR_PLAYER_ID must be replaced with actual, valid values. */
-    SUPABASE_URL: "https://xmecafiuktnendzhgcse.supabase.co",
-    SUPABASE_KEY:
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhtZWNhZml1a3RuZW5kemhnY3NlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc3NzQzNzksImV4cCI6MjA2MzM1MDM3OX0.VZsHF-ixtrWfsPX2hx9jQRzMM-h_gkH4sKmGI4-LaRY",
-    GEOGUESSR_PLAYER_ID: "6637ba34887ce844a15d10ef",
+    SUPABASE_URL: 'SUPABASE_URL',
+    SUPABASE_KEY: 'SUPABASE_KEY',
+    GEOGUESSR_PLAYER_ID: 'GEOGUESSR_PLAYER_ID',
     USER_AGENT: "GeoStats-Userscript/0.1",
   };
 
@@ -1100,6 +1099,27 @@ async function loadGameLocs() {
             duels[gameId] = gameSummary
     
             await processApiResponse(gameSummary, ENDPOINTS.DUELS_GUESS);
+            updateActivityCounters()
+        }
+
+        for (let i = 0; i < battleRoyale.length && includeBRs; i++) {
+            let game = battleRoyale[i]
+
+            const gamePayload = typeof game.payload === 'string' ? JSON.parse(game.payload) : game.payload;
+            const gameId = gamePayload.gameId
+
+            if (brGames[gameId] != undefined) {
+                console.log(`Skipping already processed BR game: ${gameId}`)
+                continue
+            }
+    
+            console.log(`Fetching BR: ${gameId}`)
+            let url = `https://game-server.geoguessr.com/api/battle-royale/${gameId}`
+
+            let gameSummary = await getJson(url)
+            brGames[gameId] = gameSummary
+
+            await processApiResponse(gameSummary, ENDPOINTS.BR_DISTANCE_GUESS);
             updateActivityCounters()
         }
     } catch(e) {
